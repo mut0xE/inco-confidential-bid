@@ -198,7 +198,7 @@ describe("confidential-bid", () => {
       auctionMint,
       organizerAta,
       organizer.publicKey,
-      1
+      2
     );
 
     // Derive PDAs
@@ -290,5 +290,127 @@ describe("confidential-bid", () => {
     // Verify NFT transferred to vault
     const vaultAccount = await getAccount(provider.connection, vault);
     expect(vaultAccount.amount).to.equal(BigInt(1));
+
+    console.log("First Price auction created successfully!\n");
+  });
+
+  it("should create vickrey (second-price) auction successfully", async () => {
+    const currentTime = Math.floor(Date.now() / 1000);
+    const startTime = new anchor.BN(currentTime + 60);
+    const endTime = new anchor.BN(currentTime + 60 + 300); // 5 minutes from start
+    const reservePrice = new anchor.BN(BigInt(10) * TOKEN_MULTIPLIER); // 10 cUSDC
+    const tokenAmount = new anchor.BN(1);
+
+    // Generate new auction ID for Vickrey auction
+    const vickreyAuctionId = new anchor.BN(Math.floor(Math.random() * 1000));
+
+    // Derive Vickrey auction PDA
+    const vickreyAuctionPda = anchor.web3.PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("auction"),
+        organizer.publicKey.toBuffer(),
+        vickreyAuctionId.toBuffer("le", 8),
+      ],
+      program.programId
+    )[0];
+
+    // Derive Vickrey vault ATA
+    const vickreyVault = getAssociatedTokenAddressSync(
+      auctionMint,
+      vickreyAuctionPda,
+      true
+    );
+
+    const tx = await program.methods
+      .createAuction(
+        vickreyAuctionId,
+        startTime,
+        endTime,
+        reservePrice,
+        { vickrey: {} }, // Second-price auction type
+        tokenAmount
+      )
+      .accounts({
+        organizer: organizer.publicKey,
+        mint: auctionMint, // NFT being auctioned
+        bidTokenMint: bidTokenMint.publicKey,
+        vault: vickreyVault,
+        auction: vickreyAuctionPda,
+        organizerTokenAccount: organizerAta,
+        systemProgram: SYSTEM_PROGRAM_ID,
+        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+        tokenProgram: anchor.utils.token.TOKEN_PROGRAM_ID,
+        incoTokenProgram: incoTokenProgram.programId,
+      })
+      .rpc();
+    logTransactionResult("Vickrey Auction created:", tx);
+
+    // VERIFY VICKREY AUCTION STATE
+    const vickreyAuctionStateAccount = await program.account.auctionState.fetch(
+      vickreyAuctionPda
+    );
+
+    // Verify organizer
+    expect(vickreyAuctionStateAccount.organizer.toBase58()).to.equal(
+      organizer.publicKey.toBase58()
+    );
+
+    // Verify auction ID
+    expect(vickreyAuctionStateAccount.auctionId.toNumber()).to.equal(
+      vickreyAuctionId.toNumber()
+    );
+
+    // Verify NFT mint
+    expect(vickreyAuctionStateAccount.mint.toBase58()).to.equal(
+      auctionMint.toBase58()
+    );
+
+    // Verify bid token mint
+    expect(vickreyAuctionStateAccount.bidTokenMint.toBase58()).to.equal(
+      bidTokenMint.publicKey.toBase58()
+    );
+
+    // Verify start time
+    expect(vickreyAuctionStateAccount.startTime.toNumber()).to.equal(
+      startTime.toNumber()
+    );
+
+    // Verify end time
+    expect(vickreyAuctionStateAccount.endTime.toNumber()).to.equal(
+      endTime.toNumber()
+    );
+
+    // Verify reserve price
+    expect(vickreyAuctionStateAccount.reservePrice.toNumber()).to.equal(
+      reservePrice.toNumber()
+    );
+
+    // Verify bid count is 0
+    expect(vickreyAuctionStateAccount.bidCount).to.equal(0);
+
+    // Verify highest bid is 0
+    expect(vickreyAuctionStateAccount.highestBid.toNumber()).to.equal(0);
+
+    // Verify second highest bid is None
+    expect(vickreyAuctionStateAccount.secondHighestBid).to.equal(null);
+
+    // Verify auction status is Open
+    expect(vickreyAuctionStateAccount.auctionStatus).to.deep.include({
+      open: {},
+    });
+
+    // Verify auction type is Vickrey (second-price)
+    expect(vickreyAuctionStateAccount.auctionType).to.deep.include({
+      vickrey: {},
+    });
+
+    // Verify NFT transferred to vault
+    const vickreyVaultAccount = await getAccount(
+      provider.connection,
+      vickreyVault
+    );
+    expect(vickreyVaultAccount.amount).to.equal(BigInt(1));
+
+    console.log("\nVickrey auction created successfully!\n");
   });
 });

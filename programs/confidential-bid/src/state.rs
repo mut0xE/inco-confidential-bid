@@ -3,15 +3,16 @@ use anchor_lang::prelude::*;
 #[account]
 pub struct AuctionState {
     pub organizer: Pubkey,
-    pub mint: Pubkey,
+    pub mint: Pubkey, // Token being auctioned
     pub highest_bidder: Option<Pubkey>,
     pub vault: Pubkey,
+    pub bid_token_mint: Pubkey, // Token used for bidding
     pub highest_bid: u128,
     pub second_highest_bid: Option<u128>,
     pub highest_timestamp: u128, // Encrypted timestamp of earliest highest bid
     pub start_time: i64,
     pub end_time: i64,
-    pub reserve_price: u64,
+    pub reserve_price: u64, // Minimum bid in bid_token_mint
     pub auction_id: u64,
     pub bid_count: u32,
     pub auction_status: AuctionStatus,
@@ -19,7 +20,8 @@ pub struct AuctionState {
     pub auction_bump: u8,
 }
 impl AuctionState {
-    pub const LEN: usize = 32 + 32 + 1 + 32 + 32 + 16 + 1 + 16 + 16 + 8 + 8 + 8 + 8 + 4 + 1 + 1 + 1;
+    pub const LEN: usize =
+        32 + 32 + 1 + 32 + 32 + 32 + 16 + 1 + 16 + 16 + 8 + 8 + 8 + 8 + 4 + 1 + 1 + 1;
 }
 
 #[account]

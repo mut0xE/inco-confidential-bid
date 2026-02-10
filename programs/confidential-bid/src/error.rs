@@ -15,4 +15,6 @@ pub enum AuctionError {
     AuctionEnded,
     #[msg("Token amount must be greater than zero")]
     InvalidTokenAmount,
+    #[msg("Inco Mint is Invalid")]
+    InvalidBidMint,
 }

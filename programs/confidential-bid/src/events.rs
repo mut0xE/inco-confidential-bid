@@ -13,4 +13,5 @@ pub struct AuctionCreated {
     pub end_time: i64,
     pub reserve_price: u64,
     pub auction_type: AuctionType,
+    pub bid_token_mint: Pubkey,
 }

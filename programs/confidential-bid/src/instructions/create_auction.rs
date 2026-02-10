@@ -3,6 +3,7 @@ use anchor_spl::{
     associated_token::AssociatedToken,
     token_interface::{transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked},
 };
+use inco_lightning::ID as INCO_LIGHTNING_ID;
 
 use crate::{
     constants::AUCTION_SEED,
@@ -21,6 +22,9 @@ pub struct CreateAuction<'info> {
     /// The NFT mint being auctioned
     #[account(mint::token_program=token_program)]
     pub mint: InterfaceAccount<'info, Mint>,
+
+    ///CHECK:BIDDING TOKEN INCO MINT - The token used for placing bids
+    pub bid_token_mint: AccountInfo<'info>,
 
     /// - Vault token account that holds Bidding NFT.
     /// - Owned by the Auction PDA
@@ -64,6 +68,8 @@ pub struct CreateAuction<'info> {
     /// Associated Token Program for creating and managing ATAs.
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub token_program: Interface<'info, TokenInterface>,
+    /// CHECK: Inco Token program
+    pub inco_token_program: AccountInfo<'info>,
 }
 
 impl<'info> CreateAuction<'info> {
@@ -77,6 +83,12 @@ impl<'info> CreateAuction<'info> {
         token_amount: u64,
         bump: &CreateAuctionBumps,
     ) -> Result<()> {
+        // validate that bid token mint is from Inco token program
+        require!(
+            self.bid_token_mint.owner == self.inco_token_program.key,
+            AuctionError::InvalidBidMint
+        );
+
         // Validate auction timing
         let current_time = Clock::get()?.unix_timestamp;
         require!(start_time > current_time, AuctionError::InvalidStartTime);
@@ -102,6 +114,7 @@ impl<'info> CreateAuction<'info> {
             },
         );
         transfer_checked(cpi_ctx, token_amount, self.mint.decimals)?;
+
         // Initialize auction state
         self.auction.set_inner(AuctionState {
             organizer: self.organizer.key(),
@@ -119,7 +132,9 @@ impl<'info> CreateAuction<'info> {
             auction_status: AuctionStatus::Open,
             auction_type,
             auction_bump: bump.auction,
+            bid_token_mint: self.bid_token_mint.key(),
         });
+
         emit!(AuctionCreated {
             auction_id,
             organizer: self.organizer.key(),
@@ -130,7 +145,9 @@ impl<'info> CreateAuction<'info> {
             end_time,
             reserve_price,
             auction_type: auction_type,
+            bid_token_mint: self.bid_token_mint.key()
         });
+
         Ok(())
     }
 }

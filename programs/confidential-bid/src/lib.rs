@@ -22,7 +22,7 @@ pub mod confidential_bid {
         auction_type: AuctionType,
         token_amount: u64,
     ) -> Result<()> {
-        ctx.accounts.create_auction_handler(
+        ctx.accounts.handler(
             auction_id,
             start_time,
             end_time,

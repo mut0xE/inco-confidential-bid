@@ -3,7 +3,11 @@ use anchor_spl::{
     associated_token::AssociatedToken,
     token_interface::{transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked},
 };
-use inco_lightning::ID as INCO_LIGHTNING_ID;
+use inco_lightning::{IncoLightning, ID as INCO_LIGHTNING_ID};
+use inco_token::cpi::{
+    accounts::{self, CreateIdempotent},
+    create_idempotent,
+};
 
 use crate::{
     constants::AUCTION_SEED,
@@ -23,8 +27,12 @@ pub struct CreateAuction<'info> {
     #[account(mint::token_program=token_program)]
     pub mint: InterfaceAccount<'info, Mint>,
 
-    ///CHECK:BIDDING TOKEN INCO MINT - The token used for placing bids
+    /// CHECK: BIDDING TOKEN INCO MINT - The token used for placing bids
     pub bid_token_mint: AccountInfo<'info>,
+
+    /// CHECK: auction bid Inco vault
+    #[account(mut)]
+    pub bid_vault: AccountInfo<'info>,
 
     /// - Vault token account that holds Bidding NFT.
     /// - Owned by the Auction PDA
@@ -68,12 +76,17 @@ pub struct CreateAuction<'info> {
     /// Associated Token Program for creating and managing ATAs.
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub token_program: Interface<'info, TokenInterface>,
+
     /// CHECK: Inco Token program
     pub inco_token_program: AccountInfo<'info>,
+
+    /// CHECK: Inco Lightning program
+    #[account(address = INCO_LIGHTNING_ID)]
+    pub inco_lightning_program: Program<'info, IncoLightning>,
 }
 
 impl<'info> CreateAuction<'info> {
-    pub fn create_auction_handler(
+    pub fn handler(
         &mut self,
         auction_id: u64,
         start_time: i64,
@@ -115,6 +128,20 @@ impl<'info> CreateAuction<'info> {
         );
         transfer_checked(cpi_ctx, token_amount, self.mint.decimals)?;
 
+        // CREATE BID VAULT (ATA)
+        let ctx_accounts = CreateIdempotent {
+            payer: self.organizer.to_account_info(),
+            associated_token: self.bid_vault.to_account_info(),
+            wallet: self.auction.to_account_info(),
+            mint: self.bid_token_mint.to_account_info(),
+            system_program: self.system_program.to_account_info(),
+            inco_lightning_program: self.inco_lightning_program.to_account_info(),
+        };
+        create_idempotent(CpiContext::new(
+            self.inco_token_program.to_account_info(),
+            ctx_accounts,
+        ))?;
+
         // Initialize auction state
         self.auction.set_inner(AuctionState {
             organizer: self.organizer.key(),
@@ -133,6 +160,7 @@ impl<'info> CreateAuction<'info> {
             auction_type,
             auction_bump: bump.auction,
             bid_token_mint: self.bid_token_mint.key(),
+            bid_vault: self.bid_vault.key(),
         });
 
         emit!(AuctionCreated {

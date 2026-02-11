@@ -45,6 +45,7 @@ describe("confidential-bid", () => {
   let bidTokenMint = Keypair.generate(); // Inco token used for bidding
   let organizerAta: anchor.web3.PublicKey; // Organizer's NFT account
   let bidderAta: anchor.web3.PublicKey; // Bidder's token account
+  let bidVault: anchor.web3.PublicKey; // Bid Vault token account
   let bidder1 = Keypair.generate(); // Bidder
 
   let auctionPda: anchor.web3.PublicKey;
@@ -226,13 +227,14 @@ describe("confidential-bid", () => {
       bidder1.publicKey,
       bidTokenMint.publicKey
     );
+    bidVault = getIncoAta(incoTokenProgram, auctionPda, bidTokenMint.publicKey);
   });
 
   it("should create first price auction successfully", async () => {
     const currentTime = Math.floor(Date.now() / 1000);
     const startTime = new anchor.BN(currentTime + 60);
     const endTime = new anchor.BN(currentTime + 3600); // 1 hour later
-    const reservePrice = new anchor.BN(1000); // 1000 lamports
+    const reservePrice = new anchor.BN(BigInt(10) * TOKEN_MULTIPLIER);
     const tokenAmount = new anchor.BN(1);
 
     const tx = await program.methods
@@ -248,6 +250,7 @@ describe("confidential-bid", () => {
         organizer: organizer.publicKey,
         mint: auctionMint, // NFT being auctioned
         bidTokenMint: bidTokenMint.publicKey,
+        bidVault,
         vault,
         auction: auctionPda,
         organizerTokenAccount: organizerAta,
@@ -255,6 +258,7 @@ describe("confidential-bid", () => {
         associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
         tokenProgram: anchor.utils.token.TOKEN_PROGRAM_ID,
         incoTokenProgram: incoTokenProgram.programId,
+        incoLightningProgram: INCO_LIGHTNING_PROGRAM_ID,
       })
       .rpc();
     logTransactionResult("Auction created:", tx);
@@ -286,6 +290,9 @@ describe("confidential-bid", () => {
     expect(auctionStateAccount.highestBid.toNumber()).to.equal(0);
     expect(auctionStateAccount.auctionStatus).to.deep.include({ open: {} });
     expect(auctionStateAccount.auctionType).to.deep.include({ normal: {} });
+    expect(auctionStateAccount.bidVault.toBase58()).to.equal(
+      bidVault.toBase58()
+    );
 
     // Verify NFT transferred to vault
     const vaultAccount = await getAccount(provider.connection, vault);
@@ -320,7 +327,11 @@ describe("confidential-bid", () => {
       vickreyAuctionPda,
       true
     );
-
+    bidVault = getIncoAta(
+      incoTokenProgram,
+      vickreyAuctionPda,
+      bidTokenMint.publicKey
+    );
     const tx = await program.methods
       .createAuction(
         vickreyAuctionId,
@@ -334,6 +345,7 @@ describe("confidential-bid", () => {
         organizer: organizer.publicKey,
         mint: auctionMint, // NFT being auctioned
         bidTokenMint: bidTokenMint.publicKey,
+        bidVault,
         vault: vickreyVault,
         auction: vickreyAuctionPda,
         organizerTokenAccount: organizerAta,
@@ -341,6 +353,7 @@ describe("confidential-bid", () => {
         associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
         tokenProgram: anchor.utils.token.TOKEN_PROGRAM_ID,
         incoTokenProgram: incoTokenProgram.programId,
+        incoLightningProgram: INCO_LIGHTNING_PROGRAM_ID,
       })
       .rpc();
     logTransactionResult("Vickrey Auction created:", tx);
@@ -404,6 +417,9 @@ describe("confidential-bid", () => {
       vickrey: {},
     });
 
+    expect(vickreyAuctionStateAccount.bidVault.toBase58()).to.equal(
+      bidVault.toBase58()
+    );
     // Verify NFT transferred to vault
     const vickreyVaultAccount = await getAccount(
       provider.connection,

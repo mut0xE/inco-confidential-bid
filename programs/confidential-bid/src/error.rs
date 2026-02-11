@@ -17,4 +17,14 @@ pub enum AuctionError {
     InvalidTokenAmount,
     #[msg("Inco Mint is Invalid")]
     InvalidBidMint,
+    #[msg("Invalid bid amount")]
+    InvalidBidAmount,
+    #[msg("Auction is not open")]
+    AuctionNotOpen,
+    #[msg("Invalid auction")]
+    InvalidAuction,
+    #[msg("Invalid bid vault")]
+    InvalidBidVault,
+    #[msg("Math Overflow")]
+    MathOverflow,
 }

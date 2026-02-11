@@ -7,6 +7,7 @@ pub struct AuctionState {
     pub highest_bidder: Option<Pubkey>,
     pub vault: Pubkey,
     pub bid_token_mint: Pubkey, // Token used for bidding
+    pub bid_vault: Pubkey,      // Inco bid  vault
     pub highest_bid: u128,
     pub second_highest_bid: Option<u128>,
     pub highest_timestamp: u128, // Encrypted timestamp of earliest highest bid

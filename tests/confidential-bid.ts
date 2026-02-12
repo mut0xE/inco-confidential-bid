@@ -21,6 +21,7 @@ import { encryptValue, hexToBuffer } from "@inco/solana-sdk";
 import { simulateAndGetHandle } from "./helpers/simulate";
 import { decryptHandleWithSigner } from "./helpers/decrypt";
 import { expect } from "chai";
+import fs from "fs";
 const SYSTEM_PROGRAM_ID = SystemProgram.programId;
 
 export const INCO_LIGHTNING_PROGRAM_ID = new PublicKey(
@@ -232,7 +233,7 @@ describe("confidential-bid", () => {
 
   it("should create first price auction successfully", async () => {
     const currentTime = Math.floor(Date.now() / 1000);
-    const startTime = new anchor.BN(currentTime + 60);
+    const startTime = new anchor.BN(currentTime + 3);
     const endTime = new anchor.BN(currentTime + 3600); // 1 hour later
     const reservePrice = new anchor.BN(BigInt(10) * TOKEN_MULTIPLIER);
     const tokenAmount = new anchor.BN(1);
@@ -428,5 +429,133 @@ describe("confidential-bid", () => {
     expect(vickreyVaultAccount.amount).to.equal(BigInt(1));
 
     console.log("\nVickrey auction created successfully!\n");
+  });
+
+  it("should place bid successfully", async () => {
+    const bidAmount = BigInt(50) * TOKEN_MULTIPLIER;
+    const encryptedBid = await encryptValue(bidAmount);
+    const bidBuffer = hexToBuffer(encryptedBid);
+
+    const [bidPda] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("bid"), auctionPda.toBuffer(), bidder1.publicKey.toBuffer()],
+      program.programId
+    );
+    bidVault = getIncoAta(incoTokenProgram, auctionPda, bidTokenMint.publicKey);
+
+    await new Promise((r) => setTimeout(r, 4000));
+    const txSim = await program.methods
+      .placeBid(bidBuffer, 0)
+      .accounts({
+        bidder: bidder1.publicKey,
+        organizer: organizer.publicKey,
+        bidderTokenAta: bidderAta,
+        bidMint: bidTokenMint.publicKey,
+        bidVault,
+        bid: bidPda,
+        auction: auctionPda,
+        systemProgram: SYSTEM_PROGRAM_ID,
+        incoTokenProgram: incoTokenProgram.programId,
+        incoLightningProgram: INCO_LIGHTNING_PROGRAM_ID,
+      })
+      .transaction();
+
+    const bidderHandle = await simulateAndGetHandle(
+      provider.connection,
+      txSim,
+      bidPda,
+      bidder1
+    );
+    if (!bidderHandle)
+      throw new Error("Failed to get bidder Handle  from simulation");
+
+    const bidderAllowance = getAllowancePda(bidderHandle, bidder1.publicKey);
+    console.log("bidder allowance:", bidderAllowance);
+
+    const bidHandle = await simulateAndGetHandle(
+      provider.connection,
+      txSim,
+      bidVault,
+      organizer.payer
+    );
+    const bidAllowance = getAllowancePda(bidHandle, organizer.publicKey);
+    console.log("bid allowance:", bidAllowance);
+
+    const tx = await program.methods
+      .placeBid(bidBuffer, 0)
+      .accounts({
+        bidder: bidder1.publicKey,
+        organizer: organizer.publicKey,
+        bidderTokenAta: bidderAta,
+        bidMint: bidTokenMint.publicKey,
+        bidVault,
+        bid: bidPda,
+        auction: auctionPda,
+        systemProgram: SYSTEM_PROGRAM_ID,
+        incoTokenProgram: incoTokenProgram.programId,
+        incoLightningProgram: INCO_LIGHTNING_PROGRAM_ID,
+      })
+      .remainingAccounts([
+        {
+          pubkey: bidderAllowance[0],
+          isSigner: false,
+          isWritable: true,
+        },
+        {
+          pubkey: bidder1.publicKey,
+          isSigner: false,
+          isWritable: false,
+        },
+        {
+          pubkey: bidAllowance[0],
+          isSigner: false,
+          isWritable: true,
+        },
+        {
+          pubkey: organizer.publicKey,
+          isSigner: false,
+          isWritable: false,
+        },
+      ])
+      .signers([bidder1])
+      .rpc();
+
+    logTransactionResult("Bid placed", tx);
+
+    const auctionState = await program.account.auctionState.fetch(auctionPda);
+    expect(auctionState.bidCount).to.equal(1);
+    console.log(auctionState);
+
+    const bidState = await program.account.bid.fetch(bidPda);
+    console.log(bidState);
+
+    const bidVaultAccount = await (
+      incoTokenProgram.account as any
+    ).incoAccount.fetch(bidVault);
+    console.log(bidVaultAccount);
+
+    const account = await (incoTokenProgram.account as any).incoAccount.fetch(
+      bidderAta
+    );
+    const handle1 = extractHandleFromAnchor(account.amount);
+    const result1 = await decryptHandleWithSigner(
+      handle1.toString(),
+      organizer.payer
+    );
+
+    console.log(
+      `Balance :`,
+      result1.success
+        ? `${formatBalance(result1.plaintext!)} tokens`
+        : result1.error
+    );
+    const handle = extractHandleFromAnchor(account.amount);
+    const result = await decryptHandleWithSigner(handle.toString(), bidder1);
+
+    console.log(
+      `Balance :`,
+      result.success
+        ? `${formatBalance(result.plaintext!)} tokens`
+        : result.error
+    );
   });
 });

@@ -33,4 +33,18 @@ pub mod confidential_bid {
         )?;
         Ok(())
     }
+
+    pub fn place_bid<'info>(
+        ctx: Context<'_, '_, '_, 'info, PlaceBid<'info>>,
+        token_amount: Vec<u8>,
+        input_type: u8,
+    ) -> Result<()> {
+        ctx.accounts.handler(
+            token_amount,
+            &ctx.bumps,
+            input_type,
+            &ctx.remaining_accounts,
+        )?;
+        Ok(())
+    }
 }

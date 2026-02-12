@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use inco_lightning::{
-    cpi::{as_euint128, new_euint128, Operation},
-    IncoLightning, ID as INCO_LIGHTNING_ID,
+    cpi::{allow, as_euint128, e_gt, e_select, new_euint128, Allow, Operation},
+    Ebool, Euint128, IncoLightning, ID as INCO_LIGHTNING_ID,
 };
 use inco_token::cpi::{accounts::TransferChecked, transfer_checked};
 
@@ -70,10 +70,17 @@ impl<'info> PlaceBid<'info> {
     pub fn handler(
         &mut self,
         bid_amount: Vec<u8>,
-        bid_timestamp: Vec<u8>,
         bump: &PlaceBidBumps,
         input_type: u8,
+        remaining_accounts: &[AccountInfo<'info>],
     ) -> Result<()> {
+        let now = Clock::get()?.unix_timestamp;
+        require!(
+            now >= self.auction.start_time,
+            AuctionError::AuctionNotStarted
+        );
+        require!(now < self.auction.end_time, AuctionError::AuctionEnded);
+
         require!(
             self.auction.auction_status == AuctionStatus::Open,
             AuctionError::AuctionNotOpen
@@ -90,9 +97,10 @@ impl<'info> PlaceBid<'info> {
 
         // Verify bid_mint is owned by Inco program
         require!(
-            self.bid_mint.owner == self.inco_token_program.key,
+            self.bid_mint.owner.key() == self.inco_token_program.key(),
             AuctionError::InvalidBidMint
         );
+
         let inco_program = self.inco_token_program.to_account_info();
 
         let current_time = Clock::get()?.unix_timestamp;
@@ -133,7 +141,8 @@ impl<'info> PlaceBid<'info> {
             bid_mint_decimals.decimals,
         )?;
 
-        self.auction
+        self.auction.bid_count = self
+            .auction
             .bid_count
             .checked_add(1)
             .ok_or(AuctionError::MathOverflow)?;
@@ -146,6 +155,88 @@ impl<'info> PlaceBid<'info> {
             time_stamp: enc_time_stamp.0,
             bid_bump: bump.bid,
         });
+
+        let previous_highest_bid = Euint128(self.auction.highest_bid);
+
+        let previous_second = Euint128(
+            self.auction
+                .second_highest_bid
+                .unwrap_or(self.auction.highest_bid),
+        );
+
+        // Check if new bid is greater than current highest
+        let cpi_ctx = CpiContext::new(
+            inco_program.clone(),
+            Operation {
+                signer: self.bidder.to_account_info(),
+            },
+        );
+
+        // does new bid higher than current highest
+        let is_gt_highest: Ebool = e_gt(cpi_ctx, enc_bid_amount, previous_highest_bid, input_type)?;
+
+        let cpi_ctx = CpiContext::new(
+            inco_program.clone(),
+            Operation {
+                signer: self.bidder.to_account_info(),
+            },
+        );
+
+        // If new bid is greater -> highest becomes new bid
+        // Otherwise ->  keep previous highest
+        let e_new_highest: Euint128 = e_select(
+            cpi_ctx,
+            is_gt_highest,
+            enc_bid_amount,
+            previous_highest_bid,
+            input_type,
+        )?;
+
+        let cpi_ctx = CpiContext::new(
+            inco_program.clone(),
+            Operation {
+                signer: self.bidder.to_account_info(),
+            },
+        );
+
+        //  Check if new bid is greater than previous second
+        let is_gt_second: Ebool = e_gt(cpi_ctx, enc_bid_amount, previous_second, input_type)?;
+
+        let cpi_ctx = CpiContext::new(
+            inco_program.clone(),
+            Operation {
+                signer: self.bidder.to_account_info(),
+            },
+        );
+
+        let temp_second: Euint128 = e_select(
+            cpi_ctx,
+            is_gt_second,
+            enc_bid_amount,
+            previous_second,
+            input_type,
+        )?;
+
+        let cpi_ctx = CpiContext::new(
+            inco_program.clone(),
+            Operation {
+                signer: self.bidder.to_account_info(),
+            },
+        );
+
+        // If new bid is greater than second -> use new bid
+        // Otherwise -> keep previous second
+        let new_second = e_select(
+            cpi_ctx,
+            is_gt_highest,
+            previous_highest_bid, // prev highest becomes second
+            temp_second,
+            input_type,
+        )?;
+
+        self.auction.highest_bid = e_new_highest.0;
+        self.auction.second_highest_bid = Some(new_second.0);
+        self.auction.highest_timestamp = enc_time_stamp.0;
 
         Ok(())
     }

@@ -15,11 +15,3 @@ pub struct AuctionCreated {
     pub auction_type: AuctionType,
     pub bid_token_mint: Pubkey,
 }
-
-#[event]
-pub struct BidPlaced {
-    pub auction: Pubkey,
-    pub bidder: Pubkey,
-    pub bid_amount: u128,
-    pub time_stamp: u128,
-}

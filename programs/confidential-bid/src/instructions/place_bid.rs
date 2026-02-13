@@ -24,7 +24,6 @@ pub struct PlaceBid<'info> {
     pub bidder_token_ata: AccountInfo<'info>,
 
     /// CHECK: Inco mint used for bidding, must match auction state
-    #[account(mut)]
     pub bid_mint: AccountInfo<'info>,
 
     /// CHECK: shared auction escrow Inco token account, must match auction state
@@ -97,7 +96,7 @@ impl<'info> PlaceBid<'info> {
 
         // Verify bid_mint is owned by Inco program
         require!(
-            self.bid_mint.owner.key() == self.inco_token_program.key(),
+            *self.bid_mint.owner == self.inco_token_program.key(),
             AuctionError::InvalidBidMint
         );
 
@@ -112,13 +111,16 @@ impl<'info> PlaceBid<'info> {
         );
         let enc_time_stamp = as_euint128(cpi_ctx, current_time as u128)?;
 
-        let cpi_ctx = CpiContext::new(
-            inco_program.clone(),
-            Operation {
-                signer: self.bidder.to_account_info(),
-            },
-        );
-        let enc_bid_amount = new_euint128(cpi_ctx, bid_amount.clone(), input_type)?;
+        let enc_bid_amount = new_euint128(
+            CpiContext::new(
+                inco_program.clone(),
+                Operation {
+                    signer: self.bidder.to_account_info(),
+                },
+            ),
+            bid_amount.clone(),
+            input_type,
+        )?;
 
         let cpi_transfer = CpiContext::new(
             inco_program.clone(),
@@ -165,15 +167,18 @@ impl<'info> PlaceBid<'info> {
         );
 
         // Check if new bid is greater than current highest
-        let cpi_ctx = CpiContext::new(
-            inco_program.clone(),
-            Operation {
-                signer: self.bidder.to_account_info(),
-            },
-        );
-
         // does new bid higher than current highest
-        let is_gt_highest: Ebool = e_gt(cpi_ctx, enc_bid_amount, previous_highest_bid, input_type)?;
+        let is_gt_highest: Ebool = e_gt(
+            CpiContext::new(
+                inco_program.clone(),
+                Operation {
+                    signer: self.bidder.to_account_info(),
+                },
+            ),
+            enc_bid_amount,
+            previous_highest_bid,
+            input_type,
+        )?;
 
         let cpi_ctx = CpiContext::new(
             inco_program.clone(),
@@ -192,25 +197,26 @@ impl<'info> PlaceBid<'info> {
             input_type,
         )?;
 
-        let cpi_ctx = CpiContext::new(
-            inco_program.clone(),
-            Operation {
-                signer: self.bidder.to_account_info(),
-            },
-        );
-
         //  Check if new bid is greater than previous second
-        let is_gt_second: Ebool = e_gt(cpi_ctx, enc_bid_amount, previous_second, input_type)?;
-
-        let cpi_ctx = CpiContext::new(
-            inco_program.clone(),
-            Operation {
-                signer: self.bidder.to_account_info(),
-            },
-        );
+        let is_gt_second: Ebool = e_gt(
+            CpiContext::new(
+                inco_program.clone(),
+                Operation {
+                    signer: self.bidder.to_account_info(),
+                },
+            ),
+            enc_bid_amount,
+            previous_second,
+            input_type,
+        )?;
 
         let temp_second: Euint128 = e_select(
-            cpi_ctx,
+            CpiContext::new(
+                inco_program.clone(),
+                Operation {
+                    signer: self.bidder.to_account_info(),
+                },
+            ),
             is_gt_second,
             enc_bid_amount,
             previous_second,
@@ -238,6 +244,24 @@ impl<'info> PlaceBid<'info> {
         self.auction.second_highest_bid = Some(new_second.0);
         self.auction.highest_timestamp = enc_time_stamp.0;
 
+        if remaining_accounts.len() >= 2 {
+            // Allow bidder to decrypt bidder ATA balance handle
+            let bidder_acc = inco_token::IncoAccount::try_deserialize(
+                &mut &self.bidder_token_ata.try_borrow_data()?[..],
+            )?;
+            let bidder_amount_handle = bidder_acc.amount.0;
+
+            let cpi_ctx = CpiContext::new(
+                inco_program.clone(),
+                Allow {
+                    allowance_account: remaining_accounts[0].clone(),
+                    signer: self.bidder.to_account_info(),
+                    allowed_address: remaining_accounts[1].clone(),
+                    system_program: self.system_program.to_account_info(),
+                },
+            );
+            allow(cpi_ctx, bidder_amount_handle, true, self.bidder.key())?;
+        }
         Ok(())
     }
 }

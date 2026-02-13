@@ -27,4 +27,12 @@ pub enum AuctionError {
     InvalidBidVault,
     #[msg("Math Overflow")]
     MathOverflow,
+    #[msg("Bid amount is below reserve price")]
+    BidBelowReserve,
+    #[msg("Unauthorized")]
+    Unauthorized,
+    #[msg("Auction not ended")]
+    AuctionNotEnded,
+    #[msg("Auction must be closed")]
+    AuctionNotClosed,
 }

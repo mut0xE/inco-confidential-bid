@@ -47,4 +47,9 @@ pub mod confidential_bid {
         )?;
         Ok(())
     }
+
+    pub fn close_auction(ctx: Context<CloseAuction>) -> Result<()> {
+        ctx.accounts.handler()?;
+        Ok(())
+    }
 }

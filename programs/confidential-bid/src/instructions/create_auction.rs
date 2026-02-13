@@ -4,10 +4,7 @@ use anchor_spl::{
     token_interface::{transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked},
 };
 use inco_lightning::{IncoLightning, ID as INCO_LIGHTNING_ID};
-use inco_token::cpi::{
-    accounts::{self, CreateIdempotent},
-    create_idempotent,
-};
+use inco_token::cpi::{accounts::CreateIdempotent, create_idempotent};
 
 use crate::{
     constants::AUCTION_SEED,

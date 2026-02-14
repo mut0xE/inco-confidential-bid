@@ -158,6 +158,8 @@ impl<'info> CreateAuction<'info> {
             auction_bump: bump.auction,
             bid_token_mint: self.bid_token_mint.key(),
             bid_vault: self.bid_vault.key(),
+            reserve_met_handle: 0,
+            prize_claimed: false,
         });
 
         emit!(AuctionCreated {

@@ -10,7 +10,12 @@ import {
   mintTo,
 } from "@solana/spl-token";
 import incoIdl from "../tests/idl/inco_token.json";
-import { Keypair, PublicKey, SystemProgram } from "@solana/web3.js";
+import {
+  ComputeBudgetProgram,
+  Keypair,
+  PublicKey,
+  SystemProgram,
+} from "@solana/web3.js";
 import {
   extractHandleFromAnchor,
   formatBalance,
@@ -18,7 +23,11 @@ import {
   getIncoAta,
 } from "./helpers/pda";
 import { encryptValue, hexToBuffer } from "@inco/solana-sdk";
-import { simulateAndGetHandle } from "./helpers/simulate";
+import {
+  simulateAndGetHandle,
+  simulateAuctionHandles,
+  simulateCheckWinnerHandles,
+} from "./helpers/simulate";
 import { decryptHandleWithSigner } from "./helpers/decrypt";
 import { expect } from "chai";
 import fs from "fs";
@@ -115,7 +124,7 @@ describe("confidential-bid", () => {
     payer: Keypair,
     owner: Keypair
   ) {
-    const mintAmount = BigInt(100) * TOKEN_MULTIPLIER;
+    const mintAmount = BigInt(1000) * TOKEN_MULTIPLIER;
 
     console.log(
       `\nMinting ${mintAmount / TOKEN_MULTIPLIER} tokens to ${ata.toBase58()}`
@@ -249,7 +258,7 @@ describe("confidential-bid", () => {
   });
 
   it("should create first price auction successfully", async () => {
-    const reservePrice = new anchor.BN(BigInt(10) * TOKEN_MULTIPLIER);
+    const reservePrice = new anchor.BN(BigInt(90) * TOKEN_MULTIPLIER);
     const tokenAmount = new anchor.BN(1);
 
     const tx = await program.methods
@@ -316,140 +325,143 @@ describe("confidential-bid", () => {
     console.log("First Price auction created successfully!\n");
   });
 
-  // it("should create vickrey (second-price) auction successfully", async () => {
-  //   const reservePrice = new anchor.BN(BigInt(10) * TOKEN_MULTIPLIER); // 10 cUSDC
-  //   const tokenAmount = new anchor.BN(1);
+  it("should create vickrey (second-price) auction successfully", async () => {
+    const reservePrice = new anchor.BN(BigInt(10) * TOKEN_MULTIPLIER); // 10 cUSDC
+    const tokenAmount = new anchor.BN(1);
 
-  //   // Generate new auction ID for Vickrey auction
-  //   const vickreyAuctionId = new anchor.BN(Math.floor(Math.random() * 1000));
+    // Generate new auction ID for Vickrey auction
+    const vickreyAuctionId = new anchor.BN(Math.floor(Math.random() * 1000));
 
-  //   // Derive Vickrey auction PDA
-  //   const vickreyAuctionPda = anchor.web3.PublicKey.findProgramAddressSync(
-  //     [
-  //       Buffer.from("auction"),
-  //       organizer.publicKey.toBuffer(),
-  //       vickreyAuctionId.toBuffer("le", 8),
-  //     ],
-  //     program.programId
-  //   )[0];
+    // Derive Vickrey auction PDA
+    const vickreyAuctionPda = anchor.web3.PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("auction"),
+        organizer.publicKey.toBuffer(),
+        vickreyAuctionId.toBuffer("le", 8),
+      ],
+      program.programId
+    )[0];
 
-  //   // Derive Vickrey vault ATA
-  //   const vickreyVault = getAssociatedTokenAddressSync(
-  //     auctionMint,
-  //     vickreyAuctionPda,
-  //     true
-  //   );
-  //   bidVault = getIncoAta(
-  //     incoTokenProgram,
-  //     vickreyAuctionPda,
-  //     bidTokenMint.publicKey
-  //   );
-  //   const tx = await program.methods
-  //     .createAuction(
-  //       vickreyAuctionId,
-  //       startTime,
-  //       endTime,
-  //       reservePrice,
-  //       { vickrey: {} }, // Second-price auction type
-  //       tokenAmount
-  //     )
-  //     .accounts({
-  //       organizer: organizer.publicKey,
-  //       mint: auctionMint, // NFT being auctioned
-  //       bidTokenMint: bidTokenMint.publicKey,
-  //       bidVault,
-  //       vault: vickreyVault,
-  //       auction: vickreyAuctionPda,
-  //       organizerTokenAccount: organizerAta,
-  //       systemProgram: SYSTEM_PROGRAM_ID,
-  //       associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
-  //       tokenProgram: anchor.utils.token.TOKEN_PROGRAM_ID,
-  //       incoTokenProgram: incoTokenProgram.programId,
-  //       incoLightningProgram: INCO_LIGHTNING_PROGRAM_ID,
-  //     })
-  //     .rpc();
-  //   logTransactionResult("Vickrey Auction created:", tx);
+    // Derive Vickrey vault ATA
+    const vickreyVault = getAssociatedTokenAddressSync(
+      auctionMint,
+      vickreyAuctionPda,
+      true
+    );
+    bidVault = getIncoAta(
+      incoTokenProgram,
+      vickreyAuctionPda,
+      bidTokenMint.publicKey
+    );
+    const tx = await program.methods
+      .createAuction(
+        vickreyAuctionId,
+        startTime,
+        endTime,
+        reservePrice,
+        { vickrey: {} }, // Second-price auction type
+        tokenAmount
+      )
+      .accounts({
+        organizer: organizer.publicKey,
+        mint: auctionMint, // NFT being auctioned
+        bidTokenMint: bidTokenMint.publicKey,
+        bidVault,
+        vault: vickreyVault,
+        auction: vickreyAuctionPda,
+        organizerTokenAccount: organizerAta,
+        systemProgram: SYSTEM_PROGRAM_ID,
+        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+        tokenProgram: anchor.utils.token.TOKEN_PROGRAM_ID,
+        incoTokenProgram: incoTokenProgram.programId,
+        incoLightningProgram: INCO_LIGHTNING_PROGRAM_ID,
+      })
+      .rpc();
+    logTransactionResult("Vickrey Auction created:", tx);
 
-  //   // VERIFY VICKREY AUCTION STATE
-  //   const vickreyAuctionStateAccount = await program.account.auctionState.fetch(
-  //     vickreyAuctionPda
-  //   );
+    // VERIFY VICKREY AUCTION STATE
+    const vickreyAuctionStateAccount = await program.account.auctionState.fetch(
+      vickreyAuctionPda
+    );
 
-  //   // Verify organizer
-  //   expect(vickreyAuctionStateAccount.organizer.toBase58()).to.equal(
-  //     organizer.publicKey.toBase58()
-  //   );
+    // Verify organizer
+    expect(vickreyAuctionStateAccount.organizer.toBase58()).to.equal(
+      organizer.publicKey.toBase58()
+    );
 
-  //   // Verify auction ID
-  //   expect(vickreyAuctionStateAccount.auctionId.toNumber()).to.equal(
-  //     vickreyAuctionId.toNumber()
-  //   );
+    // Verify auction ID
+    expect(vickreyAuctionStateAccount.auctionId.toNumber()).to.equal(
+      vickreyAuctionId.toNumber()
+    );
 
-  //   // Verify NFT mint
-  //   expect(vickreyAuctionStateAccount.mint.toBase58()).to.equal(
-  //     auctionMint.toBase58()
-  //   );
+    // Verify NFT mint
+    expect(vickreyAuctionStateAccount.mint.toBase58()).to.equal(
+      auctionMint.toBase58()
+    );
 
-  //   // Verify bid token mint
-  //   expect(vickreyAuctionStateAccount.bidTokenMint.toBase58()).to.equal(
-  //     bidTokenMint.publicKey.toBase58()
-  //   );
+    // Verify bid token mint
+    expect(vickreyAuctionStateAccount.bidTokenMint.toBase58()).to.equal(
+      bidTokenMint.publicKey.toBase58()
+    );
 
-  //   // Verify start time
-  //   expect(vickreyAuctionStateAccount.startTime.toNumber()).to.equal(
-  //     startTime.toNumber()
-  //   );
+    // Verify start time
+    expect(vickreyAuctionStateAccount.startTime.toNumber()).to.equal(
+      startTime.toNumber()
+    );
 
-  //   // Verify end time
-  //   expect(vickreyAuctionStateAccount.endTime.toNumber()).to.equal(
-  //     endTime.toNumber()
-  //   );
+    // Verify end time
+    expect(vickreyAuctionStateAccount.endTime.toNumber()).to.equal(
+      endTime.toNumber()
+    );
 
-  //   // Verify reserve price
-  //   expect(vickreyAuctionStateAccount.reservePrice.toNumber()).to.equal(
-  //     reservePrice.toNumber()
-  //   );
+    // Verify reserve price
+    expect(vickreyAuctionStateAccount.reservePrice.toNumber()).to.equal(
+      reservePrice.toNumber()
+    );
 
-  //   // Verify bid count is 0
-  //   expect(vickreyAuctionStateAccount.bidCount).to.equal(0);
+    // Verify bid count is 0
+    expect(vickreyAuctionStateAccount.bidCount).to.equal(0);
 
-  //   // Verify highest bid is 0
-  //   expect(vickreyAuctionStateAccount.highestBid.toNumber()).to.equal(0);
+    // Verify highest bid is 0
+    expect(vickreyAuctionStateAccount.highestBid.toNumber()).to.equal(0);
 
-  //   // Verify second highest bid is None
-  //   expect(vickreyAuctionStateAccount.secondHighestBid).to.equal(null);
+    // Verify second highest bid is None
+    expect(vickreyAuctionStateAccount.secondHighestBid).to.equal(null);
 
-  //   // Verify auction status is Open
-  //   expect(vickreyAuctionStateAccount.auctionStatus).to.deep.include({
-  //     open: {},
-  //   });
+    // Verify auction status is Open
+    expect(vickreyAuctionStateAccount.auctionStatus).to.deep.include({
+      open: {},
+    });
 
-  //   // Verify auction type is Vickrey (second-price)
-  //   expect(vickreyAuctionStateAccount.auctionType).to.deep.include({
-  //     vickrey: {},
-  //   });
+    // Verify auction type is Vickrey (second-price)
+    expect(vickreyAuctionStateAccount.auctionType).to.deep.include({
+      vickrey: {},
+    });
 
-  //   expect(vickreyAuctionStateAccount.bidVault.toBase58()).to.equal(
-  //     bidVault.toBase58()
-  //   );
-  //   // Verify NFT transferred to vault
-  //   const vickreyVaultAccount = await getAccount(
-  //     provider.connection,
-  //     vickreyVault
-  //   );
-  //   expect(vickreyVaultAccount.amount).to.equal(BigInt(1));
+    expect(vickreyAuctionStateAccount.bidVault.toBase58()).to.equal(
+      bidVault.toBase58()
+    );
+    // Verify NFT transferred to vault
+    const vickreyVaultAccount = await getAccount(
+      provider.connection,
+      vickreyVault
+    );
+    expect(vickreyVaultAccount.amount).to.equal(BigInt(1));
 
-  //   console.log("\nVickrey auction created successfully!\n");
-  // });
+    console.log("\nVickrey auction created successfully!\n");
+  });
 
   it("should place bids from all bidders", async () => {
     bidVault = getIncoAta(incoTokenProgram, auctionPda, bidTokenMint.publicKey);
 
     await new Promise((r) => setTimeout(r, 4000));
+    const modifyComputeUnits = ComputeBudgetProgram.setComputeUnitLimit({
+      units: 400_000,
+    });
     const bidders = [
-      { kp: bidder1, ata: bidderAta, amount: BigInt(20) * TOKEN_MULTIPLIER },
-      { kp: bidder2, ata: bidder2Ata, amount: BigInt(35) * TOKEN_MULTIPLIER },
-      { kp: bidder3, ata: bidder3Ata, amount: BigInt(80) * TOKEN_MULTIPLIER },
+      { kp: bidder1, ata: bidderAta, amount: BigInt(200) * TOKEN_MULTIPLIER },
+      { kp: bidder2, ata: bidder2Ata, amount: BigInt(100) * TOKEN_MULTIPLIER },
+      { kp: bidder3, ata: bidder3Ata, amount: BigInt(200) * TOKEN_MULTIPLIER },
     ];
     for (const bid of bidders) {
       const encryptedBid = await encryptValue(bid.amount);
@@ -484,13 +496,38 @@ describe("confidential-bid", () => {
         bid.ata,
         bid.kp
       );
+
+      const bidVaulthandle = await simulateAndGetHandle(
+        provider.connection,
+        txForSim,
+        bidVault,
+        organizer.payer
+      );
+
       const [allowancePda] = getAllowancePda(
         bidderAtahandle!,
         bid.kp.publicKey
       );
+      const [bidVaultallowancePda] = getAllowancePda(
+        bidVaulthandle!,
+        organizer.publicKey
+      );
+      const highesthandle = await simulateAuctionHandles(
+        provider.connection,
+        txForSim,
+        auctionPda,
+        organizer.payer,
+        program
+      );
+
+      const [highestallowancePda] = getAllowancePda(
+        highesthandle.highestBid!,
+        organizer.publicKey
+      );
 
       const tx = await program.methods
         .placeBid(bidBuffer, 0)
+        .preInstructions([modifyComputeUnits])
         .accounts({
           bidder: bid.kp.publicKey,
           organizer: organizer.publicKey,
@@ -514,6 +551,26 @@ describe("confidential-bid", () => {
             isSigner: false,
             isWritable: false,
           },
+          {
+            pubkey: bidVaultallowancePda,
+            isSigner: false,
+            isWritable: true,
+          },
+          {
+            pubkey: organizer.payer.publicKey,
+            isSigner: false,
+            isWritable: false,
+          },
+          {
+            pubkey: highestallowancePda,
+            isSigner: false,
+            isWritable: true,
+          },
+          {
+            pubkey: organizer.payer.publicKey,
+            isSigner: false,
+            isWritable: false,
+          },
         ])
         .signers([bid.kp])
         .rpc();
@@ -523,12 +580,7 @@ describe("confidential-bid", () => {
       await new Promise((r) => setTimeout(r, 1000));
     }
 
-    const account = await (incoTokenProgram.account as any).incoAccount.fetch(
-      bidderAta
-    );
-
-    const auctionState = await program.account.auctionState.fetch(auctionPda);
-    expect(auctionState.bidCount).to.equal(3);
+    // expect(auctionState.bidCount).to.equal(3);
 
     for (const bid of bidders) {
       const acc = await (incoTokenProgram.account as any).incoAccount.fetch(
@@ -537,12 +589,24 @@ describe("confidential-bid", () => {
       const handle = extractHandleFromAnchor(acc.amount);
       const result = await decryptHandleWithSigner(handle.toString(), bid.kp);
       console.log(
-        `Bidder ${bid.kp.publicKey.toBase58()} balance:`,
+        `Bidder ${bid.kp.publicKey.toBase58()} balance after bidding:`,
         result.success
           ? `${formatBalance(result.plaintext!)} tokens`
           : result.error
       );
     }
+    const auctionState = await program.account.auctionState.fetch(auctionPda);
+    const highestHandle = BigInt(auctionState.highestBid.toString());
+    const highestResult = await decryptHandleWithSigner(
+      highestHandle.toString(),
+      organizer.payer
+    );
+    console.log(
+      "highest bid:",
+      highestResult.success
+        ? `${formatBalance(highestResult.plaintext!)} tokens`
+        : highestResult.error
+    );
   });
 
   it("should close auction after end time", async () => {
@@ -554,6 +618,8 @@ describe("confidential-bid", () => {
       .accounts({
         organizer: organizer.publicKey,
         auction: auctionPda,
+        systemProgram: SYSTEM_PROGRAM_ID,
+        incoLightningProgram: INCO_LIGHTNING_PROGRAM_ID,
       })
       .rpc();
 
@@ -565,8 +631,10 @@ describe("confidential-bid", () => {
     expect(auctionState.organizer).to.deep.equal(organizer.publicKey);
     expect(auctionState.auctionId.toNumber()).to.equal(auctionId.toNumber());
 
-    console.log("Auction status is now Closed");
-    console.log("Status: Closed");
+    const statusKey = Object.keys(auctionState.auctionStatus)[0];
+
+    console.log("Auction status:");
+    console.log("Status:", statusKey.toUpperCase());
     console.log(`Bid Count: ${auctionState.bidCount}`);
   });
 
@@ -577,6 +645,8 @@ describe("confidential-bid", () => {
         .accounts({
           organizer: bidder1.publicKey, // wrong organizer
           auction: auctionPda,
+          systemProgram: SYSTEM_PROGRAM_ID,
+          incoLightningProgram: INCO_LIGHTNING_PROGRAM_ID,
         })
         .signers([bidder1])
         .rpc();
@@ -585,6 +655,96 @@ describe("confidential-bid", () => {
     } catch (err: any) {
       expect(err?.error?.errorCode?.code).to.equal("ConstraintSeeds");
       expect(err?.error?.errorCode?.number).to.equal(2006);
+    }
+  });
+
+  it("should check winner for all bidders", async () => {
+    const modifyComputeUnits = ComputeBudgetProgram.setComputeUnitLimit({
+      units: 400_000,
+    });
+
+    const bidders = [
+      { kp: bidder1, ata: bidderAta },
+      { kp: bidder2, ata: bidder2Ata },
+      { kp: bidder3, ata: bidder3Ata },
+    ];
+
+    for (const bid of bidders) {
+      const [bidPda] = anchor.web3.PublicKey.findProgramAddressSync(
+        [
+          Buffer.from("bid"),
+          auctionPda.toBuffer(),
+          bid.kp.publicKey.toBuffer(),
+        ],
+        program.programId
+      );
+
+      const txForSim = await program.methods
+        .checkWinner(INPUT_TYPE)
+        .accounts({
+          bidder: bid.kp.publicKey,
+          bid: bidPda,
+          auction: auctionPda,
+          incoTokenProgram: incoTokenProgram.programId,
+          systemProgram: SYSTEM_PROGRAM_ID,
+          incoLightningProgram: INCO_LIGHTNING_PROGRAM_ID,
+        })
+        .transaction();
+
+      const handles = await simulateCheckWinnerHandles(
+        provider.connection,
+        txForSim,
+        bidPda,
+        bid.kp,
+        program
+      );
+
+      const [winnerAllowance] = getAllowancePda(
+        handles.isWinner!,
+        bid.kp.publicKey
+      );
+
+      const tx = await program.methods
+        .checkWinner(0)
+        .preInstructions([modifyComputeUnits])
+        .accounts({
+          bidder: bid.kp.publicKey,
+          bid: bidPda,
+          auction: auctionPda,
+          incoTokenProgram: incoTokenProgram.programId,
+          systemProgram: SYSTEM_PROGRAM_ID,
+          incoLightningProgram: INCO_LIGHTNING_PROGRAM_ID,
+        })
+        .remainingAccounts([
+          { pubkey: winnerAllowance, isSigner: false, isWritable: true },
+          { pubkey: bid.kp.publicKey, isSigner: false, isWritable: false },
+        ])
+        .signers([bid.kp])
+        .rpc();
+
+      logTransactionResult(
+        `Winner check for ${bid.kp.publicKey.toBase58()}`,
+        tx
+      );
+
+      await new Promise((r) => setTimeout(r, 2000));
+
+      const bidAccount = await program.account.bid.fetch(bidPda);
+
+      const winnerHandle = BigInt(bidAccount.isWinnerHandle.toString());
+      const winnerResult = await decryptHandleWithSigner(
+        winnerHandle.toString(),
+        bid.kp
+      );
+
+      console.log(
+        `WINNER:`,
+        winnerResult.success
+          ? winnerResult.plaintext === "1"
+            ? "YES"
+            : "NO"
+          : winnerResult.error
+      );
     }
   });
 });

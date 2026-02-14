@@ -11,6 +11,7 @@ pub struct AuctionState {
     pub highest_bid: u128,
     pub second_highest_bid: Option<u128>,
     pub highest_timestamp: u128, // Encrypted timestamp of earliest highest bid
+    pub reserve_met_handle: u128,
     pub start_time: i64,
     pub end_time: i64,
     pub reserve_price: u64, // Minimum bid in bid_token_mint
@@ -18,11 +19,12 @@ pub struct AuctionState {
     pub bid_count: u32,
     pub auction_status: AuctionStatus,
     pub auction_type: AuctionType,
+    pub prize_claimed: bool,
     pub auction_bump: u8,
 }
 impl AuctionState {
     pub const LEN: usize =
-        32 + 32 + 1 + 32 + 32 + 32 + 16 + 1 + 16 + 16 + 8 + 8 + 8 + 8 + 4 + 1 + 1 + 1;
+        32 + 32 + 1 + 32 + 32 + 32 + 16 + 1 + 16 + 16 + 16 + 8 + 8 + 8 + 8 + 4 + 1 + 1 + 1 + 1;
 }
 
 #[account]
@@ -32,6 +34,8 @@ pub struct Bid {
     pub auction: Pubkey,
     pub bid_amount: u128,
     pub time_stamp: u128,
+    pub is_winner_handle: u128, // encrypted bool
+    pub claimed: bool,          // prevent double withdraw
     pub bid_bump: u8,
 }
 

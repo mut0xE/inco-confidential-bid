@@ -100,7 +100,7 @@ impl<'info> PlaceBid<'info> {
             AuctionError::InvalidBidMint
         );
 
-        let inco_program = self.inco_token_program.to_account_info();
+        let inco_program = self.inco_lightning_program.to_account_info();
 
         let current_time = Clock::get()?.unix_timestamp;
         let cpi_ctx = CpiContext::new(
@@ -123,7 +123,7 @@ impl<'info> PlaceBid<'info> {
         )?;
 
         let cpi_transfer = CpiContext::new(
-            inco_program.clone(),
+            self.inco_token_program.to_account_info().clone(),
             TransferChecked {
                 source: self.bidder_token_ata.to_account_info(),
                 mint: self.bid_mint.to_account_info(),
@@ -156,6 +156,8 @@ impl<'info> PlaceBid<'info> {
             bid_amount: enc_bid_amount.0,
             time_stamp: enc_time_stamp.0,
             bid_bump: bump.bid,
+            is_winner_handle: 0,
+            claimed: false,
         });
 
         let previous_highest_bid = Euint128(self.auction.highest_bid);
@@ -240,9 +242,22 @@ impl<'info> PlaceBid<'info> {
             input_type,
         )?;
 
+        let new_highest_timestamp = e_select(
+            CpiContext::new(
+                inco_program.clone(),
+                Operation {
+                    signer: self.bidder.to_account_info(),
+                },
+            ),
+            is_gt_highest,
+            enc_time_stamp,
+            Euint128(self.auction.highest_timestamp),
+            input_type,
+        )?;
+
         self.auction.highest_bid = e_new_highest.0;
         self.auction.second_highest_bid = Some(new_second.0);
-        self.auction.highest_timestamp = enc_time_stamp.0;
+        self.auction.highest_timestamp = new_highest_timestamp.0;
 
         if remaining_accounts.len() >= 2 {
             // Allow bidder to decrypt bidder ATA balance handle
@@ -262,6 +277,7 @@ impl<'info> PlaceBid<'info> {
             );
             allow(cpi_ctx, bidder_amount_handle, true, self.bidder.key())?;
         }
+
         Ok(())
     }
 }

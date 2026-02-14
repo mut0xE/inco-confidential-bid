@@ -48,8 +48,18 @@ pub mod confidential_bid {
         Ok(())
     }
 
-    pub fn close_auction(ctx: Context<CloseAuction>) -> Result<()> {
+    pub fn close_auction<'info>(
+        ctx: Context<'_, '_, '_, 'info, CloseAuction<'info>>,
+    ) -> Result<()> {
         ctx.accounts.handler()?;
+        Ok(())
+    }
+
+    pub fn check_winner<'info>(
+        ctx: Context<'_, '_, '_, 'info, CheckWinner<'info>>,
+        input_type: u8,
+    ) -> Result<()> {
+        ctx.accounts.handler(input_type, ctx.remaining_accounts)?;
         Ok(())
     }
 }
